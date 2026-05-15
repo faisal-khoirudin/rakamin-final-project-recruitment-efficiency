@@ -170,7 +170,7 @@ st.markdown("""
   analyze hiring pipelines, track key metrics, and predict candidate offer decisions with machine learning — all in one place.</p>
 </div>""", unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📊  Candidate Overview","🤖  Candidate Predictor"])
+tab1, tab2 = st.tabs(["📊  Candidate Overview","🎯  Candidate Predictor"])
 
 # ════════════════════════════════════════════════════════
 #  TAB 1 — OVERVIEW
@@ -429,7 +429,7 @@ with tab2:
                            "candidate_template.csv","text/csv")
         st.markdown(
             f"<p style='color:#6b7592;font-size:12px'>Required columns: {', '.join(f'<code>{c}</code>' for c in required_cols)}<br>"
-            f"<code>offer_acceptance_rate</code>: enter the expected OAR for each candidate (0.30–1.00).</p>",
+            f"<code>offer_acceptance_rate</code>: enter the expected OAR for each candidate (0.00–1.00).</p>",
             unsafe_allow_html=True
         )
 
