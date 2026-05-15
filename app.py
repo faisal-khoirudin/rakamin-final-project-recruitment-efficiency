@@ -10,7 +10,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ── Page config with logo ──────────────────────────────────────────────────────
-logo = Image.open("src/UnderCode.png")
+logo = Image.open("UnderCode.png")
 st.set_page_config(
     page_title="RePort · Recruitment Support",
     page_icon=logo,
@@ -340,48 +340,38 @@ with tab2:
     if mode == "🧑 Single Candidate":
         st.markdown('<p class="section-title">Single Candidate Predictor</p><p class="section-sub">Enter recruitment details to predict offer acceptance outcome</p>', unsafe_allow_html=True)
 
+        # Department outside the form — job titles update instantly on change
+        department   = st.selectbox("Department", DEPARTMENTS, key="pred_dept")
+        dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) \
+                       if department in DEPT_MEDIANS.index else 0.651
+
         with st.form("single_form"):
-            # Change #5 — restored 3-column layout using session_state for dynamic job titles
             r1c1,r1c2,r1c3 = st.columns(3)
-            department = r1c1.selectbox(
-                "Department", DEPARTMENTS,
-                index=DEPARTMENTS.index(st.session_state.selected_dept),
-                key="form_dept"
-            )
-            job_title  = r1c2.selectbox("Job Title", DEPT_JOBS[st.session_state.selected_dept])
-            source     = r1c3.selectbox("Source",    SOURCES)
+            job_title = r1c1.selectbox("Job Title", DEPT_JOBS[department])
+            source    = r1c2.selectbox("Source",    SOURCES)
+            st.empty()
 
             r2c1,r2c2,r2c3 = st.columns(3)
             num_applicants    = r2c1.number_input("Number of Applicants", min_value=10,  max_value=300,   value=150, step=5)
             time_to_hire_days = r2c2.number_input("Time to Hire (days)",  min_value=7,   max_value=89,    value=30)
             cost_per_hire     = r2c3.number_input("Cost per Hire ($)",    min_value=500, max_value=10000, value=5000, step=100)
 
-            # OAR slider
+            # OAR slider — starts at 0.00
             st.markdown("---")
             st.markdown("**Expected Offer Acceptance Rate**")
-            dept_med_oar = float(DEPT_MEDIANS.loc[st.session_state.selected_dept, 'dept_median_oar']) \
-                           if st.session_state.selected_dept in DEPT_MEDIANS.index else 0.651
             oar_input = st.slider(
                 "Expected OAR",
-                min_value=0.30, max_value=1.00,
+                min_value=0.00, max_value=1.00,
                 value=round(min(dept_med_oar + 0.05, 1.00), 2),
                 step=0.01,
             )
-            # Change #4 — simplified OAR hint, no technical DREI references
             st.markdown(
                 f"<div class='oar-hint'>💡 Not sure what value to use? Start with the department median OAR of "
                 f"<strong>{dept_med_oar:.2f}</strong> as your baseline.</div>",
                 unsafe_allow_html=True
             )
 
-            c_submit, c_dept_update = st.columns([2,1])
-            submitted      = c_submit.form_submit_button("🔮 Predict Outcome")
-            dept_changed   = c_dept_update.form_submit_button("🔄 Update Job Titles")
-
-        # Update session state when department changes
-        if dept_changed:
-            st.session_state.selected_dept = department
-            st.rerun()
+            submitted = st.form_submit_button("🔮 Predict Outcome")
 
         if submitted:
             st.session_state.selected_dept = department
