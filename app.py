@@ -80,7 +80,7 @@ def load_bundle():
 
 @st.cache_data
 def load_data():
-    return pd.read_csv("data/recruitment_efficiency_improved.csv")
+    return pd.read_csv("data/raw/recruitment_efficiency_improved.csv")
 
 bundle         = load_bundle()
 MODEL          = bundle['model']
