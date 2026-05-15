@@ -54,14 +54,14 @@ st.markdown("""
 DEPARTMENTS = ["Engineering","Sales","Product","HR","Marketing","Finance"]
 SOURCES     = ["Referral","LinkedIn","Recruiter","Job Portal"]
 
-# FIX 1: Job titles linked to departments
+# Job titles per department (exact lists from your dataset)
 DEPT_JOBS = {
-    "Engineering": ["Software Engineer","DevOps Engineer","Backend Developer","Data Engineer","UI Designer"],
-    "Sales":       ["Account Executive","Business Development Manager","Sales Associate","Sales Representative"],
-    "Product":     ["Product Manager","Product Analyst","UX Designer"],
-    "HR":          ["HR Coordinator","HR Manager","Talent Acquisition","Recruitment Specialist","Payroll Specialist"],
+    "Engineering": ["Software Engineer","DevOps Engineer","Backend Developer","Data Engineer"],
+    "Finance":     ["Accountant","Finance Manager","Financial Analyst","Payroll Specialist"],
+    "HR":          ["Talent Acquisition","HR Coordinator","Recruitment Specialist","HR Manager"],
     "Marketing":   ["Marketing Specialist","Social Media Manager","Content Strategist","SEO Analyst"],
-    "Finance":     ["Accountant","Financial Analyst","Finance Manager"],
+    "Product":     ["UX Designer","Product Manager","UI Designer","Product Analyst"],
+    "Sales":       ["Account Executive","Business Development Manager","Sales Associate","Sales Representative"],
 }
 
 PT = dict(
@@ -223,8 +223,7 @@ with tab1:
             x=jt_grp['count'], y=jt_grp['job_title'], orientation='h',
             marker_color='#a78bfa', text=jt_grp['count'], textposition='outside',
         ))
-        # FIX 2: right margin increased so count labels are not clipped
-        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=40),
+        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=55),
                           xaxis_title='Candidates', yaxis_title='', height=420)
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
@@ -270,9 +269,9 @@ with tab1:
             marker_color='#f7854f',
             text=fi_df['importance'].round(3).astype(str), textposition='outside',
         ))
-        # FIX 4: right margin so drei bar label is not clipped
-        fig.update_layout(**PT,margin=dict(t=10,b=10,r=60,l=0),height=390,
-                          xaxis_title='Importance',yaxis_title='')
+        fig.update_layout(**PT,margin=dict(t=10,b=10,r=80,l=0),height=390,
+                          xaxis_title='Importance',yaxis_title='',
+                          xaxis_range=[0, fi_df['importance'].max()*1.25])
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -322,29 +321,32 @@ with tab2:
     if mode == "🧑 Single Candidate":
         st.markdown('<p class="section-title">Single Candidate Predictor</p><p class="section-sub">Enter recruitment details to predict offer acceptance outcome</p>', unsafe_allow_html=True)
 
+        # Department selector OUTSIDE the form so job titles update instantly
+        department = st.selectbox("Department", DEPARTMENTS, key="pred_dept")
+
+        # Derive dept median OAR for hint and slider default
+        dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) if department in DEPT_MEDIANS.index else 0.651
+
         with st.form("single_form"):
             r1c1,r1c2,r1c3 = st.columns(3)
-
-            # FIX 5a: department drives job title options
-            department = r1c1.selectbox("Department", DEPARTMENTS)
-            job_title  = r1c2.selectbox("Job Title",  DEPT_JOBS[department])
-            source     = r1c3.selectbox("Source",     SOURCES)
+            job_title = r1c1.selectbox("Job Title", DEPT_JOBS[department])
+            source    = r1c2.selectbox("Source",    SOURCES)
+            st.empty()   # placeholder to keep 3-col alignment
 
             r2c1,r2c2,r2c3 = st.columns(3)
             num_applicants    = r2c1.number_input("Number of Applicants", min_value=10,  max_value=300,   value=150, step=5)
             time_to_hire_days = r2c2.number_input("Time to Hire (days)",  min_value=7,   max_value=89,    value=30)
             cost_per_hire     = r2c3.number_input("Cost per Hire ($)",    min_value=500, max_value=10000, value=5000, step=100)
 
-            # FIX 5b: OAR input so DREI can fire properly
+            # OAR input so DREI can fire properly
             st.markdown("---")
             st.markdown("**Expected Offer Acceptance Rate** — used to compute the DREI signal (the model's most important feature)")
-            dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) if department in DEPT_MEDIANS.index else 0.651
             oar_input = st.slider(
                 "Expected OAR",
                 min_value=0.30, max_value=1.00,
-                value=round(dept_med_oar + 0.05, 2),   # default: just above dept median → DREI can fire
+                value=round(min(dept_med_oar + 0.05, 1.00), 2),
                 step=0.01,
-                help=f"Department median OAR for {department}: {dept_med_oar:.2f}. Values above this median allow DREI to activate (if cost & time also beat their medians)."
+                help=f"Department median OAR for {department}: {dept_med_oar:.2f}. Values above this allow DREI to activate when cost & time also beat their dept medians."
             )
             st.markdown(
                 f"<div class='oar-hint'>ℹ️ <strong>{department}</strong> dept median OAR = <strong>{dept_med_oar:.2f}</strong>. "
