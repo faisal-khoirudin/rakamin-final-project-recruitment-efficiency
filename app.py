@@ -10,7 +10,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ── Page config with logo ──────────────────────────────────────────────────────
-logo = Image.open("UnderCode.png")
+logo = Image.open("src/UnderCode.png")
 st.set_page_config(
     page_title="RePort · Recruitment Support",
     page_icon=logo,
