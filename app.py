@@ -46,25 +46,24 @@ st.markdown("""
   .hero h1{font-family:'DM Serif Display',serif;font-size:32px;margin:0 0 6px;}
   .hero p{color:var(--subtext);font-size:15px;margin:0;}
   .info-box{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.25);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--subtext);margin-bottom:18px;}
+  .oar-hint{background:rgba(247,133,79,.08);border:1px solid rgba(247,133,79,.25);border-radius:8px;padding:10px 14px;font-size:12px;color:#9ba3bc;margin-top:6px;}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 DEPARTMENTS = ["Engineering","Sales","Product","HR","Marketing","Finance"]
 SOURCES     = ["Referral","LinkedIn","Recruiter","Job Portal"]
-JOB_TITLES  = [
-    "Software Engineer","Account Executive","UX Designer","DevOps Engineer",
-    "Talent Acquisition","Marketing Specialist","Accountant","HR Coordinator",
-    "Recruitment Specialist","Business Development Manager","Sales Associate",
-    "Backend Developer","Finance Manager","Product Manager","Social Media Manager",
-    "Content Strategist","SEO Analyst","Financial Analyst","Sales Representative",
-    "UI Designer","Product Analyst","Data Engineer","Payroll Specialist","HR Manager",
-]
-FINAL_FEATURES = [
-    'cost_per_applicant','cost_per_day','applicants_per_day',
-    'is_senior_role','difficulty_additive','drei',
-    'dept_oar_mean','jobtitle_oar_mean','source_oar_mean','dept_source_oar_mean',
-]
+
+# FIX 1: Job titles linked to departments
+DEPT_JOBS = {
+    "Engineering": ["Software Engineer","DevOps Engineer","Backend Developer","Data Engineer","UI Designer"],
+    "Sales":       ["Account Executive","Business Development Manager","Sales Associate","Sales Representative"],
+    "Product":     ["Product Manager","Product Analyst","UX Designer"],
+    "HR":          ["HR Coordinator","HR Manager","Talent Acquisition","Recruitment Specialist","Payroll Specialist"],
+    "Marketing":   ["Marketing Specialist","Social Media Manager","Content Strategist","SEO Analyst"],
+    "Finance":     ["Accountant","Financial Analyst","Finance Manager"],
+}
+
 PT = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="DM Sans",color="#9ba3bc"),
@@ -114,17 +113,16 @@ def engineer_features(df):
         (d['cost_per_hire']    -COST_MEAN)/COST_STD
     ) / 2
 
-    # DREI: uses exact column names from Stage 4 notebook dept_medians
-    # dept_medians columns: dept_median_cph, dept_median_tth, dept_median_oar
+    # DREI — uses exact column names from Stage 4 notebook dept_medians
     d2 = d.join(DEPT_MEDIANS, on='department')
     if 'offer_acceptance_rate' in d.columns:
         d['drei'] = (
-            (d['cost_per_hire'].values            < d2['dept_median_cph'].values) &
-            (d['time_to_hire_days'].values         < d2['dept_median_tth'].values) &
-            (d['offer_acceptance_rate'].values     > d2['dept_median_oar'].values)
+            (d['cost_per_hire'].values          < d2['dept_median_cph'].values) &
+            (d['time_to_hire_days'].values       < d2['dept_median_tth'].values) &
+            (d['offer_acceptance_rate'].values   > d2['dept_median_oar'].values)
         ).astype(int)
     else:
-        d['drei'] = 0   # conservative default — no OAR available for new candidates
+        d['drei'] = 0
 
     d['dept_oar_mean']        = d['department'].map(DEPT_MAP).fillna(GLOBAL_MEAN)
     d['jobtitle_oar_mean']    = d['job_title'].map(JOBTITLE_MAP).fillna(GLOBAL_MEAN)
@@ -181,11 +179,11 @@ with tab1:
     high_oar_pct = (df['offer_acceptance_rate']>=0.70).mean()*100
 
     k1,k2,k3,k4,k5 = st.columns(5)
-    k1.metric("Total Records",            f"{len(df):,}")
-    k2.metric("Avg Cost per Hire",        f"${avg_cph:,.0f}")
-    k3.metric("Avg Time to Hire",         f"{avg_tth:.1f} days")
-    k4.metric("Avg Offer Acceptance Rate",f"{avg_oar:.1%}")
-    k5.metric("High OAR Rate (≥70%)",     f"{high_oar_pct:.1f}%")
+    k1.metric("Total Records",             f"{len(df):,}")
+    k2.metric("Avg Cost per Hire",         f"${avg_cph:,.0f}")
+    k3.metric("Avg Time to Hire",          f"{avg_tth:.1f} days")
+    k4.metric("Avg Offer Acceptance Rate", f"{avg_oar:.1%}")
+    k5.metric("High OAR Rate (≥70%)",      f"{high_oar_pct:.1f}%")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -225,7 +223,8 @@ with tab1:
             x=jt_grp['count'], y=jt_grp['job_title'], orientation='h',
             marker_color='#a78bfa', text=jt_grp['count'], textposition='outside',
         ))
-        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=0),
+        # FIX 2: right margin increased so count labels are not clipped
+        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=40),
                           xaxis_title='Candidates', yaxis_title='', height=420)
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
@@ -256,8 +255,9 @@ with tab1:
                                  showlegend=(cls=='High OAR (≥0.70)')),row=1,col=1)
             fig.add_trace(go.Box(y=sub['time_to_hire_days'],name=cls,marker_color=color,
                                  showlegend=False),row=1,col=2)
-        fig.update_layout(**PT,margin=dict(t=30,b=10,l=0,r=0),
-                          legend=dict(orientation='h',y=1.1),height=370)
+        # FIX 3: more top margin so legend doesn't overlap subplot titles
+        fig.update_layout(**PT,margin=dict(t=50,b=10,l=0,r=0),
+                          legend=dict(orientation='h',y=1.15),height=390)
         fig.update_xaxes(showgrid=False)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -270,7 +270,8 @@ with tab1:
             marker_color='#f7854f',
             text=fi_df['importance'].round(3).astype(str), textposition='outside',
         ))
-        fig.update_layout(**PT,margin=dict(t=10,b=10,r=10,l=0),height=370,
+        # FIX 4: right margin so drei bar label is not clipped
+        fig.update_layout(**PT,margin=dict(t=10,b=10,r=60,l=0),height=390,
                           xaxis_title='Importance',yaxis_title='')
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
@@ -323,22 +324,45 @@ with tab2:
 
         with st.form("single_form"):
             r1c1,r1c2,r1c3 = st.columns(3)
-            department        = r1c1.selectbox("Department", DEPARTMENTS)
-            job_title         = r1c2.selectbox("Job Title",  JOB_TITLES)
-            source            = r1c3.selectbox("Source",     SOURCES)
+
+            # FIX 5a: department drives job title options
+            department = r1c1.selectbox("Department", DEPARTMENTS)
+            job_title  = r1c2.selectbox("Job Title",  DEPT_JOBS[department])
+            source     = r1c3.selectbox("Source",     SOURCES)
 
             r2c1,r2c2,r2c3 = st.columns(3)
             num_applicants    = r2c1.number_input("Number of Applicants", min_value=10,  max_value=300,   value=150, step=5)
             time_to_hire_days = r2c2.number_input("Time to Hire (days)",  min_value=7,   max_value=89,    value=30)
             cost_per_hire     = r2c3.number_input("Cost per Hire ($)",    min_value=500, max_value=10000, value=5000, step=100)
 
+            # FIX 5b: OAR input so DREI can fire properly
+            st.markdown("---")
+            st.markdown("**Expected Offer Acceptance Rate** — used to compute the DREI signal (the model's most important feature)")
+            dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) if department in DEPT_MEDIANS.index else 0.651
+            oar_input = st.slider(
+                "Expected OAR",
+                min_value=0.30, max_value=1.00,
+                value=round(dept_med_oar + 0.05, 2),   # default: just above dept median → DREI can fire
+                step=0.01,
+                help=f"Department median OAR for {department}: {dept_med_oar:.2f}. Values above this median allow DREI to activate (if cost & time also beat their medians)."
+            )
+            st.markdown(
+                f"<div class='oar-hint'>ℹ️ <strong>{department}</strong> dept median OAR = <strong>{dept_med_oar:.2f}</strong>. "
+                f"DREI activates when OAR &gt; {dept_med_oar:.2f} AND cost &lt; dept median AND time &lt; dept median.</div>",
+                unsafe_allow_html=True
+            )
+
             submitted = st.form_submit_button("🔮 Predict Outcome")
 
         if submitted:
             inp = pd.DataFrame([{
-                'department':department,'job_title':job_title,'source':source,
-                'num_applicants':num_applicants,'time_to_hire_days':time_to_hire_days,
-                'cost_per_hire':cost_per_hire,
+                'department':           department,
+                'job_title':            job_title,
+                'source':               source,
+                'num_applicants':       num_applicants,
+                'time_to_hire_days':    time_to_hire_days,
+                'cost_per_hire':        cost_per_hire,
+                'offer_acceptance_rate':oar_input,      # ← now passed in so DREI is computed correctly
             }])
             preds, probas = predict(inp)
             prob_high = probas[0][1]
@@ -378,11 +402,17 @@ with tab2:
     else:
         st.markdown('<p class="section-title">Batch Candidate Predictor</p><p class="section-sub">Upload a CSV and get predictions for all candidates at once</p>', unsafe_allow_html=True)
 
-        required_cols = ['department','job_title','source','num_applicants','time_to_hire_days','cost_per_hire']
+        # FIX 5c: offer_acceptance_rate added to required cols for batch DREI
+        required_cols = ['department','job_title','source','num_applicants',
+                         'time_to_hire_days','cost_per_hire','offer_acceptance_rate']
         st.download_button("⬇ Download CSV Template",
                            pd.DataFrame(columns=required_cols).to_csv(index=False).encode(),
                            "candidate_template.csv","text/csv")
-        st.markdown(f"<p style='color:#6b7592;font-size:12px'>Required: {', '.join(f'<code>{c}</code>' for c in required_cols)}</p>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p style='color:#6b7592;font-size:12px'>Required columns: {', '.join(f'<code>{c}</code>' for c in required_cols)}<br>"
+            f"<code>offer_acceptance_rate</code> is the expected OAR (0.30–1.00) — needed to compute the DREI feature.</p>",
+            unsafe_allow_html=True
+        )
 
         batch_file = st.file_uploader("Upload candidates CSV", type=["csv"], key="batch")
 
