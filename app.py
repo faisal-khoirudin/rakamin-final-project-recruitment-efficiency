@@ -5,12 +5,15 @@ import joblib
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from PIL import Image
 import warnings
 warnings.filterwarnings('ignore')
 
+# ── Page config with logo ──────────────────────────────────────────────────────
+logo = Image.open("src/UnderCode.png")
 st.set_page_config(
-    page_title="RecruitIQ · Recruitment Intelligence",
-    page_icon="🎯",
+    page_title="RePort · Recruitment Support",
+    page_icon=logo,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -40,13 +43,14 @@ st.markdown("""
   hr{border-color:var(--border)!important;}
   .section-title{font-family:'DM Serif Display',serif;font-size:20px;color:var(--text);margin-bottom:2px;}
   .section-sub{font-size:13px;color:var(--subtext);margin-bottom:18px;}
+  .tab-desc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:24px;font-size:14px;color:var(--subtext);line-height:1.7;}
+  .tab-desc strong{color:var(--text);}
   .badge-accept{display:inline-block;background:rgba(79,207,142,.15);color:#4fcf8e;border:1px solid rgba(79,207,142,.35);padding:6px 18px;border-radius:100px;font-weight:600;font-size:15px;}
   .badge-reject{display:inline-block;background:rgba(247,111,111,.15);color:#f76f6f;border:1px solid rgba(247,111,111,.35);padding:6px 18px;border-radius:100px;font-weight:600;font-size:15px;}
   .hero{background:linear-gradient(135deg,#1c2030 0%,#141828 100%);border:1px solid var(--border);border-radius:18px;padding:32px 36px;margin-bottom:28px;}
   .hero h1{font-family:'DM Serif Display',serif;font-size:32px;margin:0 0 6px;}
   .hero p{color:var(--subtext);font-size:15px;margin:0;}
-  .info-box{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.25);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--subtext);margin-bottom:18px;}
-  .oar-hint{background:rgba(247,133,79,.08);border:1px solid rgba(247,133,79,.25);border-radius:8px;padding:10px 14px;font-size:12px;color:#9ba3bc;margin-top:6px;}
+  .oar-hint{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.25);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--subtext);margin-top:8px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,7 +58,6 @@ st.markdown("""
 DEPARTMENTS = ["Engineering","Sales","Product","HR","Marketing","Finance"]
 SOURCES     = ["Referral","LinkedIn","Recruiter","Job Portal"]
 
-# Job titles per department (exact lists from your dataset)
 DEPT_JOBS = {
     "Engineering": ["Software Engineer","DevOps Engineer","Backend Developer","Data Engineer"],
     "Finance":     ["Accountant","Finance Manager","Financial Analyst","Payroll Specialist"],
@@ -98,7 +101,7 @@ DEPT_MEDIANS   = bundle['dept_medians']   # columns: dept_median_cph, dept_media
 
 raw_df = load_data()
 
-# ── Feature engineering (mirrors Stage 4 notebook exactly) ────────────────────
+# ── Feature engineering ────────────────────────────────────────────────────────
 def engineer_features(df):
     d = df.copy()
     d['cost_per_applicant'] = d['cost_per_hire'] / d['num_applicants']
@@ -107,13 +110,10 @@ def engineer_features(df):
     d['is_senior_role']     = d['job_title'].str.contains(
         r'\b(manager|specialist|executive|strategist)\b', case=False, na=False).astype(int)
     d['dept_src_key']       = d['department'].astype(str)+'_'+d['source'].astype(str)
-
     d['difficulty_additive'] = (
         (d['time_to_hire_days']-TIME_MEAN)/TIME_STD +
         (d['cost_per_hire']    -COST_MEAN)/COST_STD
     ) / 2
-
-    # DREI — uses exact column names from Stage 4 notebook dept_medians
     d2 = d.join(DEPT_MEDIANS, on='department')
     if 'offer_acceptance_rate' in d.columns:
         d['drei'] = (
@@ -123,12 +123,10 @@ def engineer_features(df):
         ).astype(int)
     else:
         d['drei'] = 0
-
     d['dept_oar_mean']        = d['department'].map(DEPT_MAP).fillna(GLOBAL_MEAN)
     d['jobtitle_oar_mean']    = d['job_title'].map(JOBTITLE_MAP).fillna(GLOBAL_MEAN)
     d['source_oar_mean']      = d['source'].map(SOURCE_MAP).fillna(GLOBAL_MEAN)
     d['dept_source_oar_mean'] = d['dept_src_key'].map(DEPTSRC_MAP).fillna(GLOBAL_MEAN)
-
     out = d[FINAL_FEATURES].copy()
     out.replace([np.inf,-np.inf], np.nan, inplace=True)
     for col in out.columns:
@@ -140,10 +138,15 @@ def predict(df_input):
     X = engineer_features(df_input)
     return MODEL.predict(X), MODEL.predict_proba(X)
 
+# ── Session state for dynamic job title ───────────────────────────────────────
+if 'selected_dept' not in st.session_state:
+    st.session_state.selected_dept = DEPARTMENTS[0]
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🎯 RecruitIQ")
-    st.markdown("<span style='color:#6b7592;font-size:13px'>Recruitment Intelligence Platform</span>", unsafe_allow_html=True)
+    st.image(logo, width=120)
+    st.markdown("## RePort")
+    st.markdown("<span style='color:#6b7592;font-size:13px'>Recruitment Support Platform</span>", unsafe_allow_html=True)
     st.divider()
     st.markdown("**📂 Custom Data**")
     uploaded = st.file_uploader("Upload a CSV to override", type=["csv"])
@@ -162,9 +165,9 @@ df['oar_class'] = np.where(df['offer_acceptance_rate']>=0.70,'High OAR (≥0.70)
 # ── Hero ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="hero">
-  <h1>🎯 RecruitIQ Dashboard</h1>
-  <p>Monitor recruitment KPIs, explore candidate pipelines, and predict offer acceptance outcomes —
-  powered by your <em>recruitment_efficiency_improved</em> dataset and Stage 4 XGBoost model.</p>
+  <h1>RePort — Recruitment Support</h1>
+  <p>RePort is a comprehensive recruitment support platform designed to help HR teams monitor efficiency,
+  analyze hiring pipelines, track key metrics, and predict candidate offer decisions with machine learning — all in one place.</p>
 </div>""", unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📊  Candidate Overview","🤖  Candidate Predictor"])
@@ -173,6 +176,17 @@ tab1, tab2 = st.tabs(["📊  Candidate Overview","🤖  Candidate Predictor"])
 #  TAB 1 — OVERVIEW
 # ════════════════════════════════════════════════════════
 with tab1:
+
+    # Change #3 — HR-friendly tab description
+    st.markdown("""
+    <div class="tab-desc">
+    This section provides a complete picture of your recruitment data. Use it to monitor key hiring metrics —
+    such as how much it costs to hire, how long the process takes, and how often candidates accept your offers.
+    The charts below break down these metrics by <strong>department</strong>, <strong>job title</strong>, and
+    <strong>recruitment source</strong>, helping HR teams quickly spot patterns, compare performance, and identify
+    which channels or roles need attention.
+    </div>""", unsafe_allow_html=True)
+
     avg_cph      = df['cost_per_hire'].mean()
     avg_tth      = df['time_to_hire_days'].mean()
     avg_oar      = df['offer_acceptance_rate'].mean()
@@ -187,7 +201,7 @@ with tab1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Row 1: by source + by department
+    # Row 1
     c1,c2 = st.columns(2)
     with c1:
         st.markdown('<p class="section-title">Records by Source</p><p class="section-sub">Candidate volume and OAR class per acquisition channel</p>', unsafe_allow_html=True)
@@ -214,7 +228,7 @@ with tab1:
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
 
-    # Row 2: by job title + OAR distribution
+    # Row 2
     c3,c4 = st.columns(2)
     with c3:
         st.markdown('<p class="section-title">Records by Job Title</p><p class="section-sub">Candidate volume by role (top 15)</p>', unsafe_allow_html=True)
@@ -223,8 +237,10 @@ with tab1:
             x=jt_grp['count'], y=jt_grp['job_title'], orientation='h',
             marker_color='#a78bfa', text=jt_grp['count'], textposition='outside',
         ))
-        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=55),
-                          xaxis_title='Candidates', yaxis_title='', height=420)
+        # Change #1 — right margin increased significantly so labels are never clipped
+        fig.update_layout(**PT, margin=dict(t=10,b=10,l=0,r=70),
+                          xaxis_title='Candidates', yaxis_title='', height=420,
+                          xaxis_range=[0, jt_grp['count'].max()*1.20])
         fig.update_traces(marker_line_width=0)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -243,7 +259,7 @@ with tab1:
                           legend=dict(orientation='h',y=1.08))
         st.plotly_chart(fig, use_container_width=True)
 
-    # Row 3: Cost & Time boxes + Feature importance
+    # Row 3
     c5,c6 = st.columns(2)
     with c5:
         st.markdown('<p class="section-title">Cost & Time to Hire</p><p class="section-sub">Distribution by OAR class</p>', unsafe_allow_html=True)
@@ -254,7 +270,6 @@ with tab1:
                                  showlegend=(cls=='High OAR (≥0.70)')),row=1,col=1)
             fig.add_trace(go.Box(y=sub['time_to_hire_days'],name=cls,marker_color=color,
                                  showlegend=False),row=1,col=2)
-        # FIX 3: more top margin so legend doesn't overlap subplot titles
         fig.update_layout(**PT,margin=dict(t=50,b=10,l=0,r=0),
                           legend=dict(orientation='h',y=1.15),height=390)
         fig.update_xaxes(showgrid=False)
@@ -283,7 +298,6 @@ with tab1:
         avg_time=('time_to_hire_days','mean'),
         avg_oar=('offer_acceptance_rate','mean'),
     ).reset_index().sort_values('avg_oar',ascending=False)
-
     fig = make_subplots(rows=1,cols=3,subplot_titles=['Avg Cost per Hire ($)','Avg Time to Hire (days)','Avg OAR (%)'])
     colors = ['#4f8ef7','#f7854f','#4fcf8e','#a78bfa']
     for i,(col,sfx) in enumerate([('avg_cost','$'),('avg_time',' d'),('avg_oar','%')],1):
@@ -308,10 +322,15 @@ with tab1:
 #  TAB 2 — PREDICTOR
 # ════════════════════════════════════════════════════════
 with tab2:
+
+    # Change #3 & #4 — HR-friendly description, includes OAR threshold, removes technical info-box
     st.markdown("""
-    <div class="info-box">
-    ℹ️ Predicts whether a recruitment record will result in <strong>High OAR (≥ 0.70)</strong> or <strong>Low OAR (&lt; 0.70)</strong>,
-    using the same feature engineering pipeline from your Stage 4 notebook (ratio features, difficulty additive, DREI, target encoding).
+    <div class="tab-desc">
+    This section uses a machine learning model to predict whether a recruitment process is likely to result in a
+    <strong>High OAR (≥ 0.70)</strong> or <strong>Low OAR (&lt; 0.70)</strong>. Simply fill in the details for
+    a candidate or role — such as department, source, number of applicants, time to hire, and expected cost —
+    and the model will instantly estimate the likelihood of the candidate accepting the offer.
+    You can also upload a CSV file to run predictions for multiple candidates at once.
     </div>""", unsafe_allow_html=True)
 
     mode = st.radio("", ["🧑 Single Candidate","📋 Batch Upload"], horizontal=True, label_visibility="collapsed")
@@ -321,42 +340,51 @@ with tab2:
     if mode == "🧑 Single Candidate":
         st.markdown('<p class="section-title">Single Candidate Predictor</p><p class="section-sub">Enter recruitment details to predict offer acceptance outcome</p>', unsafe_allow_html=True)
 
-        # Department selector OUTSIDE the form so job titles update instantly
-        department = st.selectbox("Department", DEPARTMENTS, key="pred_dept")
-
-        # Derive dept median OAR for hint and slider default
-        dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) if department in DEPT_MEDIANS.index else 0.651
-
         with st.form("single_form"):
+            # Change #5 — restored 3-column layout using session_state for dynamic job titles
             r1c1,r1c2,r1c3 = st.columns(3)
-            job_title = r1c1.selectbox("Job Title", DEPT_JOBS[department])
-            source    = r1c2.selectbox("Source",    SOURCES)
-            st.empty()   # placeholder to keep 3-col alignment
+            department = r1c1.selectbox(
+                "Department", DEPARTMENTS,
+                index=DEPARTMENTS.index(st.session_state.selected_dept),
+                key="form_dept"
+            )
+            job_title  = r1c2.selectbox("Job Title", DEPT_JOBS[st.session_state.selected_dept])
+            source     = r1c3.selectbox("Source",    SOURCES)
 
             r2c1,r2c2,r2c3 = st.columns(3)
             num_applicants    = r2c1.number_input("Number of Applicants", min_value=10,  max_value=300,   value=150, step=5)
             time_to_hire_days = r2c2.number_input("Time to Hire (days)",  min_value=7,   max_value=89,    value=30)
             cost_per_hire     = r2c3.number_input("Cost per Hire ($)",    min_value=500, max_value=10000, value=5000, step=100)
 
-            # OAR input so DREI can fire properly
+            # OAR slider
             st.markdown("---")
-            st.markdown("**Expected Offer Acceptance Rate** — used to compute the DREI signal (the model's most important feature)")
+            st.markdown("**Expected Offer Acceptance Rate**")
+            dept_med_oar = float(DEPT_MEDIANS.loc[st.session_state.selected_dept, 'dept_median_oar']) \
+                           if st.session_state.selected_dept in DEPT_MEDIANS.index else 0.651
             oar_input = st.slider(
                 "Expected OAR",
                 min_value=0.30, max_value=1.00,
                 value=round(min(dept_med_oar + 0.05, 1.00), 2),
                 step=0.01,
-                help=f"Department median OAR for {department}: {dept_med_oar:.2f}. Values above this allow DREI to activate when cost & time also beat their dept medians."
             )
+            # Change #4 — simplified OAR hint, no technical DREI references
             st.markdown(
-                f"<div class='oar-hint'>ℹ️ <strong>{department}</strong> dept median OAR = <strong>{dept_med_oar:.2f}</strong>. "
-                f"DREI activates when OAR &gt; {dept_med_oar:.2f} AND cost &lt; dept median AND time &lt; dept median.</div>",
+                f"<div class='oar-hint'>💡 Not sure what value to use? Start with the department median OAR of "
+                f"<strong>{dept_med_oar:.2f}</strong> as your baseline.</div>",
                 unsafe_allow_html=True
             )
 
-            submitted = st.form_submit_button("🔮 Predict Outcome")
+            c_submit, c_dept_update = st.columns([2,1])
+            submitted      = c_submit.form_submit_button("🔮 Predict Outcome")
+            dept_changed   = c_dept_update.form_submit_button("🔄 Update Job Titles")
+
+        # Update session state when department changes
+        if dept_changed:
+            st.session_state.selected_dept = department
+            st.rerun()
 
         if submitted:
+            st.session_state.selected_dept = department
             inp = pd.DataFrame([{
                 'department':           department,
                 'job_title':            job_title,
@@ -364,7 +392,7 @@ with tab2:
                 'num_applicants':       num_applicants,
                 'time_to_hire_days':    time_to_hire_days,
                 'cost_per_hire':        cost_per_hire,
-                'offer_acceptance_rate':oar_input,      # ← now passed in so DREI is computed correctly
+                'offer_acceptance_rate':oar_input,
             }])
             preds, probas = predict(inp)
             prob_high = probas[0][1]
@@ -404,7 +432,6 @@ with tab2:
     else:
         st.markdown('<p class="section-title">Batch Candidate Predictor</p><p class="section-sub">Upload a CSV and get predictions for all candidates at once</p>', unsafe_allow_html=True)
 
-        # FIX 5c: offer_acceptance_rate added to required cols for batch DREI
         required_cols = ['department','job_title','source','num_applicants',
                          'time_to_hire_days','cost_per_hire','offer_acceptance_rate']
         st.download_button("⬇ Download CSV Template",
@@ -412,7 +439,7 @@ with tab2:
                            "candidate_template.csv","text/csv")
         st.markdown(
             f"<p style='color:#6b7592;font-size:12px'>Required columns: {', '.join(f'<code>{c}</code>' for c in required_cols)}<br>"
-            f"<code>offer_acceptance_rate</code> is the expected OAR (0.30–1.00) — needed to compute the DREI feature.</p>",
+            f"<code>offer_acceptance_rate</code>: enter the expected OAR for each candidate (0.30–1.00).</p>",
             unsafe_allow_html=True
         )
 
