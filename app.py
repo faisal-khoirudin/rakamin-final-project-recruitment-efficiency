@@ -51,6 +51,21 @@ st.markdown("""
   .hero h1{font-family:'DM Serif Display',serif;font-size:32px;margin:0 0 6px;}
   .hero p{color:var(--subtext);font-size:15px;margin:0;}
   .oar-hint{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.25);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--subtext);margin-top:8px;}
+  .insight-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:10px;}
+  .insight-icon{font-size:22px;margin-bottom:6px;}
+  .insight-title{font-size:13px;font-weight:600;color:var(--text);margin:0 0 6px;}
+  .insight-body{font-size:13px;color:var(--subtext);line-height:1.6;margin:0;}
+  .insight-tag-good{display:inline-block;background:rgba(79,207,142,.15);color:#4fcf8e;border:1px solid rgba(79,207,142,.3);padding:2px 10px;border-radius:100px;font-size:11px;font-weight:600;margin-bottom:8px;}
+  .insight-tag-warn{display:inline-block;background:rgba(247,133,79,.15);color:#f7854f;border:1px solid rgba(247,133,79,.3);padding:2px 10px;border-radius:100px;font-size:11px;font-weight:600;margin-bottom:8px;}
+  .insight-tag-bad{display:inline-block;background:rgba(247,111,111,.15);color:#f76f6f;border:1px solid rgba(247,111,111,.3);padding:2px 10px;border-radius:100px;font-size:11px;font-weight:600;margin-bottom:8px;}
+  .whatif-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;}
+  .whatif-winner{border:1px solid rgba(79,207,142,.4)!important;background:rgba(79,207,142,.05)!important;}
+  .whatif-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--subtext);margin:0 0 4px;}
+  .whatif-val{font-size:18px;font-weight:600;color:var(--text);}
+  .compare-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--border);font-size:13px;}
+  .compare-row:last-child{border-bottom:none;}
+  .compare-label{color:var(--subtext);}
+  .compare-val{color:var(--text);font-weight:500;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -137,6 +152,131 @@ def engineer_features(df):
 def predict(df_input):
     X = engineer_features(df_input)
     return MODEL.predict(X), MODEL.predict_proba(X)
+
+def generate_insights(row, dept_medians, source_map, global_mean):
+    """
+    Generate detailed HR-friendly insights for a single candidate prediction.
+    row: dict with department, job_title, source, num_applicants,
+         time_to_hire_days, cost_per_hire, offer_acceptance_rate
+    """
+    dept     = row['department']
+    source   = row['source']
+    apps     = row['num_applicants']
+    tth      = row['time_to_hire_days']
+    cph      = row['cost_per_hire']
+    oar      = row['offer_acceptance_rate']
+
+    med_cph  = float(dept_medians.loc[dept, 'dept_median_cph']) if dept in dept_medians.index else 5215
+    med_tth  = float(dept_medians.loc[dept, 'dept_median_tth']) if dept in dept_medians.index else 47
+    med_oar  = float(dept_medians.loc[dept, 'dept_median_oar']) if dept in dept_medians.index else global_mean
+
+    src_oar  = source_map.get(source, global_mean)
+    cpa      = cph / apps if apps > 0 else 0
+    apd      = apps / tth if tth > 0 else 0
+
+    insights = []
+
+    # ① Cost Efficiency
+    cost_diff = cph - med_cph
+    if cph < med_cph * 0.85:
+        tag  = "good"
+        body = (f"Your cost per hire (${cph:,.0f}) is well below the {dept} department median "
+                f"(${med_cph:,.0f}), indicating an efficient sourcing process. "
+                f"Keep leveraging the same channels to maintain this performance.")
+    elif cph <= med_cph * 1.10:
+        tag  = "warn"
+        body = (f"Your cost per hire (${cph:,.0f}) is close to the {dept} department median "
+                f"(${med_cph:,.0f}). There is some room to optimize — consider whether external "
+                f"recruiters or agency fees can be reduced without impacting quality.")
+    else:
+        tag  = "bad"
+        body = (f"Your cost per hire (${cph:,.0f}) is significantly above the {dept} department "
+                f"median (${med_cph:,.0f}), an overspend of ${cost_diff:,.0f}. "
+                f"Review reliance on external agencies and consider shifting budget toward "
+                f"direct channels such as Referral or LinkedIn.")
+    insights.append({"icon":"💰","title":"Cost Efficiency","tag":tag,"body":body})
+
+    # ② Time Efficiency
+    time_diff = tth - med_tth
+    if tth < med_tth * 0.85:
+        tag  = "good"
+        body = (f"Time to hire ({tth} days) is well below the {dept} median ({med_tth:.0f} days). "
+                f"A fast process signals strong pipeline readiness and a positive candidate experience, "
+                f"both of which support higher offer acceptance.")
+    elif tth <= med_tth * 1.15:
+        tag  = "warn"
+        body = (f"Time to hire ({tth} days) is near the {dept} median ({med_tth:.0f} days). "
+                f"Consider streamlining interview rounds or reducing decision lag between stages "
+                f"to keep candidates engaged and prevent drop-offs.")
+    else:
+        tag  = "bad"
+        body = (f"Time to hire ({tth} days) exceeds the {dept} median by {time_diff:.0f} days. "
+                f"Prolonged processes are a leading cause of offer rejection — candidates often "
+                f"accept competing offers during long waits. Aim to reduce to under {med_tth:.0f} days "
+                f"by limiting interview rounds and accelerating internal approvals.")
+    insights.append({"icon":"⏱️","title":"Time to Hire","tag":tag,"body":body})
+
+    # ③ Source Quality
+    best_src  = max(source_map, key=source_map.get)
+    best_oar  = source_map[best_src]
+    if src_oar >= global_mean * 1.02:
+        tag  = "good"
+        body = (f"{source} has an average OAR of {src_oar:.1%} in your dataset, which is above "
+                f"the global average ({global_mean:.1%}). This is a strong acquisition channel "
+                f"for your organization — continue prioritizing it.")
+    elif src_oar >= global_mean * 0.97:
+        tag  = "warn"
+        body = (f"{source} has an average OAR of {src_oar:.1%}, close to the global average "
+                f"({global_mean:.1%}). If acceptance rates remain flat, consider testing "
+                f"{best_src} (avg OAR: {best_oar:.1%}) for this role type.")
+    else:
+        tag  = "bad"
+        body = (f"{source} has a below-average OAR ({src_oar:.1%} vs global average {global_mean:.1%}). "
+                f"Consider switching to {best_src} (avg OAR: {best_oar:.1%}), which consistently "
+                f"yields better acceptance outcomes in your recruitment data.")
+    insights.append({"icon":"📣","title":"Source Quality","tag":tag,"body":body})
+
+    # ④ Pipeline Volume
+    if apd >= 4.0:
+        tag  = "warn"
+        body = (f"With {apps} applicants over {tth} days ({apd:.1f} applicants/day), your pipeline "
+                f"volume is very high. A large volume of low-intent applications can dilute match "
+                f"quality. Consider tightening the job description or adding a pre-screening step "
+                f"to improve candidate-role fit.")
+    elif apd >= 1.5:
+        tag  = "good"
+        body = (f"Pipeline velocity of {apd:.1f} applicants/day is healthy, suggesting the role "
+                f"is attracting genuine interest. Maintaining this balance between volume and "
+                f"quality is key to sustaining high offer acceptance rates.")
+    else:
+        tag  = "bad"
+        body = (f"With only {apd:.1f} applicants/day over {tth} days, pipeline velocity is low. "
+                f"This may indicate an unattractive job description, a niche skill set, or limited "
+                f"sourcing reach. Consider refreshing the JD, broadening the source mix, or "
+                f"offering more competitive compensation to increase applicant interest.")
+    insights.append({"icon":"👥","title":"Pipeline Volume","tag":tag,"body":body})
+
+    # ⑤ Overall Difficulty
+    diff = ((tth - 47.19) / 23.86 + (cph - 5214.8) / 2731) / 2
+    if diff < -0.3:
+        tag  = "good"
+        body = (f"Overall recruitment difficulty is low — both cost and time are below average. "
+                f"This is an efficient process that creates a positive candidate experience. "
+                f"Document this approach and replicate it for similar roles.")
+    elif diff <= 0.3:
+        tag  = "warn"
+        body = (f"Overall recruitment difficulty is moderate. The process is neither notably "
+                f"efficient nor problematic. Focus on the specific areas flagged above to push "
+                f"the outcome toward High OAR.")
+    else:
+        tag  = "bad"
+        body = (f"Overall recruitment difficulty is high — both cost and time are above average, "
+                f"which tends to frustrate candidates and increase the risk of offer rejection. "
+                f"Prioritize reducing time-to-hire first, as it has the most direct impact on "
+                f"candidate experience and acceptance likelihood.")
+    insights.append({"icon":"🎯","title":"Overall Recruitment Difficulty","tag":tag,"body":body})
+
+    return insights
 
 # ── Session state for dynamic job title ───────────────────────────────────────
 if 'selected_dept' not in st.session_state:
@@ -388,6 +528,7 @@ with tab2:
             prob_high = probas[0][1]
             prob_low  = probas[0][0]
 
+            # ── Prediction result ──────────────────────────────────────────
             st.markdown("---")
             r1,r2,r3 = st.columns([1.2,1,1])
             badge = '<span class="badge-accept">✅ High OAR (≥0.70)</span>' if preds[0]==1 else '<span class="badge-reject">❌ Low OAR (&lt;0.70)</span>'
@@ -417,6 +558,163 @@ with tab2:
             with st.expander("🔍 View engineered features sent to the model"):
                 feat_df = engineer_features(inp)
                 st.dataframe(feat_df.T.rename(columns={0:"Value"}).round(4), use_container_width=True)
+
+            # ── Feature 1: Detailed Insights & Recommendations ─────────────
+            st.markdown("---")
+            st.markdown('<p class="section-title">📋 Insights & Recommendations</p>'
+                        '<p class="section-sub">Detailed analysis of each recruitment factor to help HR take action</p>',
+                        unsafe_allow_html=True)
+
+            insights = generate_insights(
+                row={
+                    'department':department,'job_title':job_title,'source':source,
+                    'num_applicants':num_applicants,'time_to_hire_days':time_to_hire_days,
+                    'cost_per_hire':cost_per_hire,'offer_acceptance_rate':oar_input,
+                },
+                dept_medians=DEPT_MEDIANS,
+                source_map=SOURCE_MAP,
+                global_mean=GLOBAL_MEAN,
+            )
+
+            TAG_LABELS = {"good":"✅ On Track","warn":"⚠️ Needs Attention","bad":"❌ Action Required"}
+
+            # Display in 2 columns, 5 cards total (3 left, 2 right)
+            col_ins_l, col_ins_r = st.columns(2)
+            for i, ins in enumerate(insights):
+                col = col_ins_l if i % 2 == 0 else col_ins_r
+                tag_class = f"insight-tag-{ins['tag']}"
+                tag_label = TAG_LABELS[ins['tag']]
+                col.markdown(f"""
+                <div class="insight-card">
+                  <div class="insight-icon">{ins['icon']}</div>
+                  <p class="insight-title">{ins['title']}</p>
+                  <span class="{tag_class}">{tag_label}</span>
+                  <p class="insight-body">{ins['body']}</p>
+                </div>""", unsafe_allow_html=True)
+
+            # ── Feature 2: What-If Scenario Comparison ─────────────────────
+            st.markdown("---")
+            st.markdown('<p class="section-title">🔀 What-If Scenario Comparison</p>'
+                        '<p class="section-sub">Compare two recruitment approaches for the same role to find the more effective strategy</p>',
+                        unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='oar-hint'>ℹ️ Department (<strong>{department}</strong>) and Job Title "
+                f"(<strong>{job_title}</strong>) are inherited from your prediction above. "
+                f"Adjust the recruitment conditions below to compare two scenarios.</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            wi_col_a, wi_col_b = st.columns(2)
+
+            with wi_col_a:
+                st.markdown("#### Scenario A")
+                wa_src  = st.selectbox("Source",               SOURCES,      key="wa_src",  index=SOURCES.index(source))
+                wa_apps = st.number_input("Number of Applicants", min_value=10, max_value=300, value=num_applicants, step=5, key="wa_apps")
+                wa_tth  = st.number_input("Time to Hire (days)",  min_value=7,  max_value=89,  value=time_to_hire_days, key="wa_tth")
+                wa_cph  = st.number_input("Cost per Hire ($)",    min_value=500,max_value=10000,value=cost_per_hire, step=100, key="wa_cph")
+                wa_oar  = st.slider("Expected OAR", 0.00, 1.00, oar_input, 0.01, key="wa_oar")
+
+            with wi_col_b:
+                st.markdown("#### Scenario B")
+                wb_src  = st.selectbox("Source",               SOURCES,      key="wb_src")
+                wb_apps = st.number_input("Number of Applicants", min_value=10, max_value=300, value=150, step=5, key="wb_apps")
+                wb_tth  = st.number_input("Time to Hire (days)",  min_value=7,  max_value=89,  value=30, key="wb_tth")
+                wb_cph  = st.number_input("Cost per Hire ($)",    min_value=500,max_value=10000,value=4000, step=100, key="wb_cph")
+                wb_oar  = st.slider("Expected OAR", 0.00, 1.00, round(min(oar_input+0.1,1.0),2), 0.01, key="wb_oar")
+
+            if st.button("⚡ Run Comparison"):
+                inp_a = pd.DataFrame([{'department':department,'job_title':job_title,'source':wa_src,
+                    'num_applicants':wa_apps,'time_to_hire_days':wa_tth,
+                    'cost_per_hire':wa_cph,'offer_acceptance_rate':wa_oar}])
+                inp_b = pd.DataFrame([{'department':department,'job_title':job_title,'source':wb_src,
+                    'num_applicants':wb_apps,'time_to_hire_days':wb_tth,
+                    'cost_per_hire':wb_cph,'offer_acceptance_rate':wb_oar}])
+
+                pred_a, proba_a = predict(inp_a)
+                pred_b, proba_b = predict(inp_b)
+                ph_a = proba_a[0][1]
+                ph_b = proba_b[0][1]
+                winner = "A" if ph_a >= ph_b else "B"
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("### Comparison Results")
+
+                res_a, res_b = st.columns(2)
+                cls_a = "whatif-card whatif-winner" if winner=="A" else "whatif-card"
+                cls_b = "whatif-card whatif-winner" if winner=="B" else "whatif-card"
+
+                label_a = "✅ High OAR" if pred_a[0]==1 else "❌ Low OAR"
+                label_b = "✅ High OAR" if pred_b[0]==1 else "❌ Low OAR"
+                crown_a = " 👑 Better outcome" if winner=="A" else ""
+                crown_b = " 👑 Better outcome" if winner=="B" else ""
+
+                with res_a:
+                    st.markdown(f"""
+                    <div class="{cls_a}">
+                      <p class="whatif-label">Scenario A{crown_a}</p>
+                      <p class="whatif-val">{label_a} &nbsp; {ph_a*100:.1f}%</p>
+                      <br>
+                      <div class="compare-row"><span class="compare-label">Source</span><span class="compare-val">{wa_src}</span></div>
+                      <div class="compare-row"><span class="compare-label">Applicants</span><span class="compare-val">{wa_apps}</span></div>
+                      <div class="compare-row"><span class="compare-label">Time to Hire</span><span class="compare-val">{wa_tth} days</span></div>
+                      <div class="compare-row"><span class="compare-label">Cost per Hire</span><span class="compare-val">${wa_cph:,}</span></div>
+                      <div class="compare-row"><span class="compare-label">Expected OAR</span><span class="compare-val">{wa_oar:.2f}</span></div>
+                    </div>""", unsafe_allow_html=True)
+
+                with res_b:
+                    st.markdown(f"""
+                    <div class="{cls_b}">
+                      <p class="whatif-label">Scenario B{crown_b}</p>
+                      <p class="whatif-val">{label_b} &nbsp; {ph_b*100:.1f}%</p>
+                      <br>
+                      <div class="compare-row"><span class="compare-label">Source</span><span class="compare-val">{wb_src}</span></div>
+                      <div class="compare-row"><span class="compare-label">Applicants</span><span class="compare-val">{wb_apps}</span></div>
+                      <div class="compare-row"><span class="compare-label">Time to Hire</span><span class="compare-val">{wb_tth} days</span></div>
+                      <div class="compare-row"><span class="compare-label">Cost per Hire</span><span class="compare-val">${wb_cph:,}</span></div>
+                      <div class="compare-row"><span class="compare-label">Expected OAR</span><span class="compare-val">{wb_oar:.2f}</span></div>
+                    </div>""", unsafe_allow_html=True)
+
+                # Side-by-side probability bar chart
+                st.markdown("<br>", unsafe_allow_html=True)
+                fig_wi = go.Figure()
+                fig_wi.add_trace(go.Bar(
+                    name="Scenario A", x=["High OAR Probability"],
+                    y=[round(ph_a*100,1)],
+                    marker_color="#4fcf8e" if pred_a[0]==1 else "#f76f6f",
+                    text=[f"{ph_a*100:.1f}%"], textposition="outside",
+                ))
+                fig_wi.add_trace(go.Bar(
+                    name="Scenario B", x=["High OAR Probability"],
+                    y=[round(ph_b*100,1)],
+                    marker_color="#4fcf8e" if pred_b[0]==1 else "#f76f6f",
+                    text=[f"{ph_b*100:.1f}%"], textposition="outside",
+                    marker_pattern_shape="x",
+                ))
+                fig_wi.add_hline(y=50, line_dash="dash", line_color="#f7854f",
+                                 annotation_text="Decision threshold (50%)",
+                                 annotation_font_color="#f7854f")
+                fig_wi.update_layout(**PT, barmode="group", height=300,
+                                     margin=dict(t=20,b=10,l=0,r=0),
+                                     yaxis_range=[0,110], yaxis_title="Probability (%)",
+                                     legend=dict(orientation="h", y=1.1))
+                fig_wi.update_traces(marker_line_width=0)
+                st.plotly_chart(fig_wi, use_container_width=True)
+
+                # Summary recommendation
+                diff_pct = abs(ph_a - ph_b)*100
+                better_src = wa_src if winner=="A" else wb_src
+                better_tth = wa_tth if winner=="A" else wb_tth
+                better_cph = wa_cph if winner=="A" else wb_cph
+                st.markdown(f"""
+                <div class="tab-desc">
+                <strong>💡 Recommendation:</strong> Scenario {winner} yields a higher acceptance probability
+                by <strong>{diff_pct:.1f} percentage points</strong>.
+                The better outcome uses <strong>{better_src}</strong> as the sourcing channel,
+                with a time to hire of <strong>{better_tth} days</strong> and a cost per hire of
+                <strong>${better_cph:,}</strong>. Consider adopting these conditions for the
+                <strong>{department} — {job_title}</strong> role to improve offer acceptance likelihood.
+                </div>""", unsafe_allow_html=True)
 
     # ── Batch ────────────────────────────────────────────────────────────────
     else:
