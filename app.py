@@ -605,50 +605,93 @@ with tab2:
             )
             st.markdown("<br>", unsafe_allow_html=True)
 
+            # Store dept/job in session so comparison persists across reruns
+            st.session_state['wi_dept']    = department
+            st.session_state['wi_job']     = job_title
+            st.session_state['wi_src_def'] = source
+            st.session_state['wi_apps_def']= num_applicants
+            st.session_state['wi_tth_def'] = time_to_hire_days
+            st.session_state['wi_cph_def'] = cost_per_hire
+            st.session_state['wi_oar_def'] = oar_input
+
+        # ── What-if inputs and results OUTSIDE the if-submitted block ─────────
+        # This prevents Streamlit from resetting everything on widget interaction
+        if 'wi_dept' in st.session_state:
+            wi_dept = st.session_state['wi_dept']
+            wi_job  = st.session_state['wi_job']
+
             wi_col_a, wi_col_b = st.columns(2)
 
             with wi_col_a:
                 st.markdown("#### Scenario A")
-                wa_src  = st.selectbox("Source",               SOURCES,      key="wa_src",  index=SOURCES.index(source))
-                wa_apps = st.number_input("Number of Applicants", min_value=10, max_value=300, value=num_applicants, step=5, key="wa_apps")
-                wa_tth  = st.number_input("Time to Hire (days)",  min_value=7,  max_value=89,  value=time_to_hire_days, key="wa_tth")
-                wa_cph  = st.number_input("Cost per Hire ($)",    min_value=500,max_value=10000,value=cost_per_hire, step=100, key="wa_cph")
-                wa_oar  = st.slider("Expected OAR", 0.00, 1.00, oar_input, 0.01, key="wa_oar")
+                wa_src  = st.selectbox("Source", SOURCES, key="wa_src",
+                                       index=SOURCES.index(st.session_state.get('wi_src_def', SOURCES[0])))
+                wa_apps = st.number_input("Number of Applicants", min_value=10,  max_value=300,
+                                          value=st.session_state.get('wi_apps_def', 150), step=5, key="wa_apps")
+                wa_tth  = st.number_input("Time to Hire (days)",  min_value=7,   max_value=89,
+                                          value=st.session_state.get('wi_tth_def', 30),  key="wa_tth")
+                wa_cph  = st.number_input("Cost per Hire ($)",    min_value=500, max_value=10000,
+                                          value=st.session_state.get('wi_cph_def', 5000), step=100, key="wa_cph")
+                wa_oar  = st.slider("Expected OAR", 0.00, 1.00,
+                                    st.session_state.get('wi_oar_def', 0.70), 0.01, key="wa_oar")
 
             with wi_col_b:
                 st.markdown("#### Scenario B")
-                wb_src  = st.selectbox("Source",               SOURCES,      key="wb_src")
-                wb_apps = st.number_input("Number of Applicants", min_value=10, max_value=300, value=150, step=5, key="wb_apps")
-                wb_tth  = st.number_input("Time to Hire (days)",  min_value=7,  max_value=89,  value=30, key="wb_tth")
-                wb_cph  = st.number_input("Cost per Hire ($)",    min_value=500,max_value=10000,value=4000, step=100, key="wb_cph")
-                wb_oar  = st.slider("Expected OAR", 0.00, 1.00, round(min(oar_input+0.1,1.0),2), 0.01, key="wb_oar")
+                wb_src  = st.selectbox("Source", SOURCES, key="wb_src")
+                wb_apps = st.number_input("Number of Applicants", min_value=10,  max_value=300,
+                                          value=150, step=5, key="wb_apps")
+                wb_tth  = st.number_input("Time to Hire (days)",  min_value=7,   max_value=89,
+                                          value=30,   key="wb_tth")
+                wb_cph  = st.number_input("Cost per Hire ($)",    min_value=500, max_value=10000,
+                                          value=4000, step=100, key="wb_cph")
+                wb_oar  = st.slider("Expected OAR", 0.00, 1.00,
+                                    round(min(st.session_state.get('wi_oar_def', 0.70)+0.10, 1.0), 2),
+                                    0.01, key="wb_oar")
 
             if st.button("⚡ Run Comparison"):
-                inp_a = pd.DataFrame([{'department':department,'job_title':job_title,'source':wa_src,
+                inp_a = pd.DataFrame([{'department':wi_dept,'job_title':wi_job,'source':wa_src,
                     'num_applicants':wa_apps,'time_to_hire_days':wa_tth,
                     'cost_per_hire':wa_cph,'offer_acceptance_rate':wa_oar}])
-                inp_b = pd.DataFrame([{'department':department,'job_title':job_title,'source':wb_src,
+                inp_b = pd.DataFrame([{'department':wi_dept,'job_title':wi_job,'source':wb_src,
                     'num_applicants':wb_apps,'time_to_hire_days':wb_tth,
                     'cost_per_hire':wb_cph,'offer_acceptance_rate':wb_oar}])
 
                 pred_a, proba_a = predict(inp_a)
                 pred_b, proba_b = predict(inp_b)
-                ph_a = proba_a[0][1]
-                ph_b = proba_b[0][1]
+                ph_a   = proba_a[0][1]
+                ph_b   = proba_b[0][1]
                 winner = "A" if ph_a >= ph_b else "B"
+
+                # Store results in session_state so they persist
+                st.session_state['wi_results'] = {
+                    'ph_a':ph_a,'ph_b':ph_b,'pred_a':int(pred_a[0]),'pred_b':int(pred_b[0]),
+                    'winner':winner,
+                    'wa_src':wa_src,'wa_apps':wa_apps,'wa_tth':wa_tth,'wa_cph':wa_cph,'wa_oar':wa_oar,
+                    'wb_src':wb_src,'wb_apps':wb_apps,'wb_tth':wb_tth,'wb_cph':wb_cph,'wb_oar':wb_oar,
+                }
+
+            # Render results from session_state (persists across reruns)
+            if 'wi_results' in st.session_state:
+                r = st.session_state['wi_results']
+                ph_a   = r['ph_a'];   ph_b   = r['ph_b']
+                winner = r['winner']
+                wa_src = r['wa_src']; wb_src = r['wb_src']
+                wa_tth = r['wa_tth']; wb_tth = r['wb_tth']
+                wa_cph = r['wa_cph']; wb_cph = r['wb_cph']
+                wa_oar = r['wa_oar']; wb_oar = r['wb_oar']
+                wa_apps= r['wa_apps'];wb_apps= r['wb_apps']
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("### Comparison Results")
 
+                cls_a  = "whatif-card whatif-winner" if winner=="A" else "whatif-card"
+                cls_b  = "whatif-card whatif-winner" if winner=="B" else "whatif-card"
+                label_a= "✅ High OAR" if r['pred_a']==1 else "❌ Low OAR"
+                label_b= "✅ High OAR" if r['pred_b']==1 else "❌ Low OAR"
+                crown_a= " 👑 Better outcome" if winner=="A" else ""
+                crown_b= " 👑 Better outcome" if winner=="B" else ""
+
                 res_a, res_b = st.columns(2)
-                cls_a = "whatif-card whatif-winner" if winner=="A" else "whatif-card"
-                cls_b = "whatif-card whatif-winner" if winner=="B" else "whatif-card"
-
-                label_a = "✅ High OAR" if pred_a[0]==1 else "❌ Low OAR"
-                label_b = "✅ High OAR" if pred_b[0]==1 else "❌ Low OAR"
-                crown_a = " 👑 Better outcome" if winner=="A" else ""
-                crown_b = " 👑 Better outcome" if winner=="B" else ""
-
                 with res_a:
                     st.markdown(f"""
                     <div class="{cls_a}">
@@ -675,19 +718,18 @@ with tab2:
                       <div class="compare-row"><span class="compare-label">Expected OAR</span><span class="compare-val">{wb_oar:.2f}</span></div>
                     </div>""", unsafe_allow_html=True)
 
-                # Side-by-side probability bar chart
                 st.markdown("<br>", unsafe_allow_html=True)
                 fig_wi = go.Figure()
                 fig_wi.add_trace(go.Bar(
                     name="Scenario A", x=["High OAR Probability"],
                     y=[round(ph_a*100,1)],
-                    marker_color="#4fcf8e" if pred_a[0]==1 else "#f76f6f",
+                    marker_color="#4fcf8e" if r['pred_a']==1 else "#f76f6f",
                     text=[f"{ph_a*100:.1f}%"], textposition="outside",
                 ))
                 fig_wi.add_trace(go.Bar(
                     name="Scenario B", x=["High OAR Probability"],
                     y=[round(ph_b*100,1)],
-                    marker_color="#4fcf8e" if pred_b[0]==1 else "#f76f6f",
+                    marker_color="#4fcf8e" if r['pred_b']==1 else "#f76f6f",
                     text=[f"{ph_b*100:.1f}%"], textposition="outside",
                     marker_pattern_shape="x",
                 ))
@@ -701,8 +743,7 @@ with tab2:
                 fig_wi.update_traces(marker_line_width=0)
                 st.plotly_chart(fig_wi, use_container_width=True)
 
-                # Summary recommendation
-                diff_pct = abs(ph_a - ph_b)*100
+                diff_pct   = abs(ph_a - ph_b)*100
                 better_src = wa_src if winner=="A" else wb_src
                 better_tth = wa_tth if winner=="A" else wb_tth
                 better_cph = wa_cph if winner=="A" else wb_cph
@@ -713,7 +754,7 @@ with tab2:
                 The better outcome uses <strong>{better_src}</strong> as the sourcing channel,
                 with a time to hire of <strong>{better_tth} days</strong> and a cost per hire of
                 <strong>${better_cph:,}</strong>. Consider adopting these conditions for the
-                <strong>{department} — {job_title}</strong> role to improve offer acceptance likelihood.
+                <strong>{wi_dept} — {wi_job}</strong> role to improve offer acceptance likelihood.
                 </div>""", unsafe_allow_html=True)
 
     # ── Batch ────────────────────────────────────────────────────────────────
