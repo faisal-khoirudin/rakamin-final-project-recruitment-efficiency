@@ -35,7 +35,6 @@
 - [Example Commands](#-example-commands)
 - [Future Improvements](#-future-improvements)
 - [Authors](#-authors)
-- [License](#-license)
 
 ---
 
@@ -74,7 +73,7 @@ Key pain points identified in this project:
 3. **Predict** offer acceptance probability (OAR ≥ 70%) using a production-grade classification model.
 4. **Deploy** a live, interactive HR dashboard enabling real-time scenario comparison and pre-offer prediction.
 
-**SMART Goal:** Achieve ≥80% accuracy and F1-score in OAR prediction, reduce time-to-hire by 15%, and reduce cost-per-hire by 10% within a six-month deployment window.
+**SMART Goal:** Achieve ≥80% AUC-ROC in OAR prediction and improve Offer Acceptance Rate from 65.08% to 80% within a five-week deployment window.
 
 ---
 
@@ -148,15 +147,15 @@ recruitment-efficiency-prediction/
 ## 🔄 Workflow / Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     END-TO-END PROJECT PIPELINE                         │
-├──────────────┬────────────────────────────────────────────────────────  │
-│  Stage 0     │  Problem Framing · Stakeholder Matrix · SMART Goals       │
-│  Stage 1     │  Data Acquisition · Wrangling · Quality Audit · EDA       │
-│  Stage 2     │  Feature Engineering · Baseline Models · Optuna Tuning    │
-│  Stage 3     │  Evaluation · SHAP Interpretability · Bias & Fairness     │
-│  Stage 4     │  Streamlit Dashboard · GitHub · Streamlit Cloud Deploy    │
-└──────────────┴────────────────────────────────────────────────────────  │
+┌────────────────────────────────────────────────────────────────────────────┐
+│                       END-TO-END PROJECT PIPELINE                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│  Stage 0     │  Problem Framing · Stakeholder Matrix · SMART Goals         │
+│  Stage 1     │  Data Acquisition · Wrangling · Quality Audit · EDA         │
+│  Stage 2     │  Feature Engineering · Baseline Models · Optuna Tuning      │
+│  Stage 3     │  Evaluation · SHAP Interpretability · Bias & Fairness       │
+│  Stage 4     │  Streamlit Dashboard · GitHub · Streamlit Cloud Deploy      │
+└──────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
 ### Stage 0 — Project Initiation & Problem Framing
@@ -240,7 +239,7 @@ df['target_high_oar'] = (df['offer_acceptance_rate'] >= 0.70).astype(int)
 
 ### Feature Engineering
 
-Nine domain-informed features were constructed to compensate for the near-zero raw feature correlations:
+Ten domain-informed features were constructed to compensate for the near-zero raw feature correlations:
 
 | Feature | Formula / Method | Business Interpretation |
 |---|---|---|
@@ -334,7 +333,7 @@ SHAP (SHapley Additive exPlanations) values were used to interpret individual pr
 
 ### Global Feature Importance (Mean |SHAP|)
 
-| Rank | Feature | Mean |SHAP| | Interpretation |
+| Rank | Feature | Mean SHAP | Interpretation |
 |---|---|---|---|
 | 1 | `drei` | 0.7805 | Department Recruitment Efficiency Index — dominant binary driver of predicted acceptance |
 | 2 | `difficulty_additive` | 0.6134 | Combined time + cost friction score — high values strongly reduce predicted acceptance |
@@ -342,7 +341,7 @@ SHAP (SHapley Additive exPlanations) values were used to interpret individual pr
 | 4 | `cost_per_applicant` | 0.2326 | Spend efficiency per screened candidate |
 | 5 | `applicants_per_day` | 0.2050 | Pipeline velocity — reflects role attractiveness and sourcing quality |
 | 6 | `jobtitle_oar_mean` | 0.2027 | Historical role-level acceptance baseline |
-| 7 | `dept_source_oar_mean` | 0.1286 | Interaction signal: dept × channel historical efficiency |
+| 7 | `dept_source_oar_mean` | 0.1286 | Interaction signal: dept x channel historical efficiency |
 | 8 | `dept_oar_mean` | 0.1037 | Department-level historical OAR provides contextual baseline |
 | 9 | `source_oar_mean` | 0.1009 | Channel-level historical performance adjusts predictions |
 | 10 | `is_senior_role` | 0.0950 | Senior roles exhibit structurally different acceptance dynamics |
@@ -483,7 +482,6 @@ notebooks/Stage 4 Deployment & Business Integration.ipynb
 import joblib
 import pandas as pd
 
-# Load model bundle
 # Load model bundle
 bundle           = joblib.load("models/recruitment_model.joblib")
 model            = bundle["model"]
