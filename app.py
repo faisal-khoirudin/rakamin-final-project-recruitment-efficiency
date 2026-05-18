@@ -153,6 +153,107 @@ def predict(df_input):
     X = engineer_features(df_input)
     return MODEL.predict(X), MODEL.predict_proba(X)
 
+def validate_batch(df, required_cols):
+    """
+    Validates a batch upload DataFrame.
+    Returns a dict:
+      - errors:   list of blocking issues (prevent prediction)
+      - warnings: list of non-blocking issues (prediction runs with fixes)
+      - cleaned:  cleaned DataFrame ready for prediction (if no errors)
+    """
+    errors   = []
+    warnings = []
+    df       = df.copy()
+
+    # ── 1. Empty file ────────────────────────────────────────────────────
+    if df.empty:
+        errors.append("The uploaded file is empty. Please upload a CSV with at least one row of data.")
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 2. Missing required columns ──────────────────────────────────────
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        errors.append(f"Missing required column(s): {', '.join(f'`{c}`' for c in missing)}. "
+                      f"Please download the template to see the correct format.")
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 3. Completely empty required columns ─────────────────────────────
+    for col in required_cols:
+        if df[col].isna().all():
+            errors.append(f"Column `{col}` is entirely empty. Please provide values for all required columns.")
+
+    if errors:
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 4. Numeric type validation ───────────────────────────────────────
+    numeric_cols = ['num_applicants','time_to_hire_days','cost_per_hire','offer_acceptance_rate']
+    for col in numeric_cols:
+        non_numeric = pd.to_numeric(df[col], errors='coerce').isna() & df[col].notna()
+        if non_numeric.any():
+            count = non_numeric.sum()
+            errors.append(f"Column `{col}` contains {count} non-numeric value(s) "
+                          f"(e.g. row {non_numeric.idxmax()+2}). This column must contain numbers only.")
+        else:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    if errors:
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 5. Zero / negative values ────────────────────────────────────────
+    for col, label in [('num_applicants','Number of Applicants'),
+                       ('time_to_hire_days','Time to Hire'),
+                       ('cost_per_hire','Cost per Hire')]:
+        bad = df[col] <= 0
+        if bad.any():
+            errors.append(f"`{label}` has {bad.sum()} row(s) with zero or negative values. "
+                          f"All values must be greater than 0.")
+
+    if errors:
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 6. OAR range validation ──────────────────────────────────────────
+    oar_out = (df['offer_acceptance_rate'] < 0.00) | (df['offer_acceptance_rate'] > 1.00)
+    if oar_out.any():
+        count = oar_out.sum()
+        warnings.append(f"{count} row(s) have `offer_acceptance_rate` outside the valid range (0.00–1.00). "
+                        f"These rows will be clamped to the nearest valid value (0.00 or 1.00) before prediction.")
+        df['offer_acceptance_rate'] = df['offer_acceptance_rate'].clip(0.00, 1.00)
+
+    # ── 7. Unknown categorical values ────────────────────────────────────
+    valid_depts   = set(DEPARTMENTS)
+    valid_sources = set(SOURCES)
+    valid_jobs    = set(j for jobs in DEPT_JOBS.values() for j in jobs)
+
+    unk_dept = ~df['department'].isin(valid_depts)
+    if unk_dept.any():
+        uniq = df.loc[unk_dept, 'department'].unique().tolist()
+        warnings.append(f"{unk_dept.sum()} row(s) have unrecognized department value(s): "
+                        f"{', '.join(str(u) for u in uniq[:5])}. "
+                        f"Target encoding will fall back to the global average for these rows.")
+
+    unk_src = ~df['source'].isin(valid_sources)
+    if unk_src.any():
+        uniq = df.loc[unk_src, 'source'].unique().tolist()
+        warnings.append(f"{unk_src.sum()} row(s) have unrecognized source value(s): "
+                        f"{', '.join(str(u) for u in uniq[:5])}. "
+                        f"Target encoding will fall back to the global average for these rows.")
+
+    unk_job = ~df['job_title'].isin(valid_jobs)
+    if unk_job.any():
+        uniq = df.loc[unk_job, 'job_title'].unique().tolist()
+        warnings.append(f"{unk_job.sum()} row(s) have unrecognized job title(s): "
+                        f"{', '.join(str(u) for u in uniq[:5])}. "
+                        f"Target encoding will fall back to the global average for these rows.")
+
+    # ── 8. Missing values in required columns (partial) ──────────────────
+    for col in required_cols:
+        n_null = df[col].isna().sum()
+        if n_null > 0:
+            warnings.append(f"`{col}` has {n_null} missing value(s). "
+                            f"These rows will use the column median as a fallback.")
+
+    return {"errors": errors, "warnings": warnings, "cleaned": df}
+
 def generate_insights(row, dept_medians, source_map, global_mean):
     """
     Generate detailed HR-friendly insights for a single candidate prediction.
@@ -777,11 +878,49 @@ with tab2:
         if batch_file:
             try:
                 batch_df = pd.read_csv(batch_file)
-                missing = [c for c in required_cols if c not in batch_df.columns]
-                if missing:
-                    st.error(f"❌ Missing columns: {', '.join(missing)}")
+                st.markdown(f"<p style='color:#9ba3bc;font-size:13px'>📂 File loaded: <strong>{len(batch_df):,} rows</strong> detected — running validation…</p>", unsafe_allow_html=True)
+
+                # ── Validation ────────────────────────────────────────────
+                result = validate_batch(batch_df, required_cols)
+
+                # Show blocking errors
+                if result['errors']:
+                    st.markdown("""
+                    <div style="background:rgba(247,111,111,.08);border:1px solid rgba(247,111,111,.35);
+                    border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+                    <p style="color:#f76f6f;font-weight:600;font-size:14px;margin:0 0 10px;">
+                    ❌ Validation Failed — Please fix the following issues before proceeding:</p>
+                    </div>""", unsafe_allow_html=True)
+                    for i, err in enumerate(result['errors'], 1):
+                        st.error(f"**Issue {i}:** {err}")
+                    st.markdown(
+                        "<p style='color:#9ba3bc;font-size:13px;margin-top:8px;'>"
+                        "💡 Download the CSV template above to see the correct format.</p>",
+                        unsafe_allow_html=True
+                    )
+
                 else:
-                    st.info(f"✓ {len(batch_df):,} candidates loaded — running predictions…")
+                    # Show non-blocking warnings
+                    if result['warnings']:
+                        st.markdown("""
+                        <div style="background:rgba(247,133,79,.08);border:1px solid rgba(247,133,79,.35);
+                        border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+                        <p style="color:#f7854f;font-weight:600;font-size:14px;margin:0 0 10px;">
+                        ⚠️ Validation Passed with Warnings — Predictions will run, but please review:</p>
+                        </div>""", unsafe_allow_html=True)
+                        for warn in result['warnings']:
+                            st.warning(warn)
+
+                    # ── All clear — run predictions ────────────────────────
+                    batch_df = result['cleaned']
+                    st.markdown(
+                        "<div style='background:rgba(79,207,142,.08);border:1px solid rgba(79,207,142,.35);"
+                        "border-radius:10px;padding:12px 18px;margin-bottom:16px;'>"
+                        "<p style='color:#4fcf8e;font-weight:600;font-size:13px;margin:0;'>"
+                        f"✅ Validation passed — running predictions on {len(batch_df):,} candidate(s)…</p></div>",
+                        unsafe_allow_html=True
+                    )
+
                     preds, probas = predict(batch_df)
                     batch_df['prediction']      = np.where(preds==1,'High OAR (≥0.70)','Low OAR (<0.70)')
                     batch_df['prob_high_oar_%'] = (probas[:,1]*100).round(1)
@@ -812,8 +951,16 @@ with tab2:
                     st.download_button("⬇ Download Predictions",
                                        batch_df.to_csv(index=False).encode(),
                                        "predictions.csv","text/csv")
+
             except Exception as e:
-                st.error(f"❌ Error: {e}")
+                st.markdown(
+                    "<div style='background:rgba(247,111,111,.08);border:1px solid rgba(247,111,111,.35);"
+                    "border-radius:10px;padding:14px 18px;'>"
+                    "<p style='color:#f76f6f;font-weight:600;font-size:14px;margin:0 0 6px;'>❌ Unexpected Error</p>"
+                    f"<p style='color:#9ba3bc;font-size:13px;margin:0;'>The file could not be processed: {e}<br>"
+                    "Please ensure the file is a valid CSV and matches the required format.</p></div>",
+                    unsafe_allow_html=True
+                )
         else:
             st.markdown("""
             <div style="background:#1c2030;border:1px dashed #262c3d;border-radius:14px;padding:40px;text-align:center;color:#6b7592;">
