@@ -582,15 +582,42 @@ with tab2:
         st.markdown('<p class="section-title">Single Candidate Predictor</p><p class="section-sub">Enter recruitment details to predict offer acceptance outcome</p>', unsafe_allow_html=True)
 
         # Department outside the form — job titles update instantly on change
-        department   = st.selectbox("Department", DEPARTMENTS, key="pred_dept")
+        dept_sel     = st.selectbox("Department", DEPARTMENTS + ["✏️ Other (type manually)"], key="pred_dept")
+        if dept_sel == "✏️ Other (type manually)":
+            department = st.text_input("Enter Department manually",
+                placeholder="e.g. Legal, Customer Success",
+                help="This value is not in the training data — dept medians and target encoding will use global averages as fallback.",
+                key="pred_dept_text")
+            if not department:
+                department = "Engineering"   # safe default until user types
+        else:
+            department = dept_sel
+
         dept_med_oar = float(DEPT_MEDIANS.loc[department, 'dept_median_oar']) \
                        if department in DEPT_MEDIANS.index else 0.651
 
         with st.form("single_form"):
             r1c1,r1c2,r1c3 = st.columns(3)
-            job_title = r1c1.selectbox("Job Title", DEPT_JOBS[department])
-            source    = r1c2.selectbox("Source",    SOURCES)
+
+            # Option B: selectbox + "Other" free-text fallback
+            job_sel   = r1c1.selectbox("Job Title", DEPT_JOBS[department] + ["✏️ Other (type manually)"])
+            src_sel   = r1c2.selectbox("Source",    SOURCES + ["✏️ Other (type manually)"])
             st.empty()
+
+            # Reveal text input when "Other" is selected
+            if job_sel == "✏️ Other (type manually)":
+                job_title = st.text_input("Enter Job Title manually",
+                    placeholder="e.g. Machine Learning Engineer",
+                    help="This value is not in the training data — target encoding will use the global average as fallback.")
+            else:
+                job_title = job_sel
+
+            if src_sel == "✏️ Other (type manually)":
+                source = st.text_input("Enter Source manually",
+                    placeholder="e.g. Instagram, Campus Hiring",
+                    help="This value is not in the training data — target encoding will use the global average as fallback.")
+            else:
+                source = src_sel
 
             r2c1,r2c2,r2c3 = st.columns(3)
             num_applicants    = r2c1.number_input("Number of Applicants", min_value=10,  max_value=300,   value=150, step=5)
@@ -613,6 +640,22 @@ with tab2:
             )
 
             submitted = st.form_submit_button("🔮 Predict Outcome")
+
+        # Warn if any custom "Other" values are in use
+        custom_fields = []
+        if dept_sel == "✏️ Other (type manually)" and department:
+            custom_fields.append(f"Department: <strong>{department}</strong>")
+        if 'job_sel' in dir() and job_sel == "✏️ Other (type manually)" and job_title:
+            custom_fields.append(f"Job Title: <strong>{job_title}</strong>")
+        if 'src_sel' in dir() and src_sel == "✏️ Other (type manually)" and source:
+            custom_fields.append(f"Source: <strong>{source}</strong>")
+        if custom_fields:
+            st.markdown(
+                f"<div class='oar-hint'>⚠️ Custom value(s) detected — {', '.join(custom_fields)} — "
+                f"are not in the training data. The model will use the global average OAR as a fallback "
+                f"for target encoding. Predictions may be less accurate for these inputs.</div>",
+                unsafe_allow_html=True
+            )
 
         if submitted:
             st.session_state.selected_dept = department
