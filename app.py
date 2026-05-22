@@ -780,8 +780,16 @@ with tab2:
 
             with wi_col_a:
                 st.markdown("#### Scenario A")
-                wa_src  = st.selectbox("Source", SOURCES, key="wa_src",
-                                       index=SOURCES.index(st.session_state.get('wi_src_def', SOURCES[0])))
+                wa_src_sel = st.selectbox("Source", SOURCES + ["✏️ Other (type manually)"], key="wa_src",
+                                          index=SOURCES.index(st.session_state.get('wi_src_def', SOURCES[0]))
+                                          if st.session_state.get('wi_src_def', SOURCES[0]) in SOURCES else 0)
+                if wa_src_sel == "✏️ Other (type manually)":
+                    wa_src = st.text_input("Enter Source manually", placeholder="e.g. Instagram, Campus Hiring",
+                                           help="Not in training data — target encoding will use global average.",
+                                           key="wa_src_text")
+                    if not wa_src: wa_src = ""
+                else:
+                    wa_src = wa_src_sel
                 wa_apps = st.number_input("Number of Applicants", min_value=10,  max_value=300,
                                           value=st.session_state.get('wi_apps_def', 150), step=5, key="wa_apps")
                 wa_tth  = st.number_input("Time to Hire (days)",  min_value=7,   max_value=89,
@@ -793,7 +801,14 @@ with tab2:
 
             with wi_col_b:
                 st.markdown("#### Scenario B")
-                wb_src  = st.selectbox("Source", SOURCES, key="wb_src")
+                wb_src_sel = st.selectbox("Source", SOURCES + ["✏️ Other (type manually)"], key="wb_src")
+                if wb_src_sel == "✏️ Other (type manually)":
+                    wb_src = st.text_input("Enter Source manually", placeholder="e.g. Instagram, Campus Hiring",
+                                           help="Not in training data — target encoding will use global average.",
+                                           key="wb_src_text")
+                    if not wb_src: wb_src = ""
+                else:
+                    wb_src = wb_src_sel
                 wb_apps = st.number_input("Number of Applicants", min_value=10,  max_value=300,
                                           value=150, step=5, key="wb_apps")
                 wb_tth  = st.number_input("Time to Hire (days)",  min_value=7,   max_value=89,
