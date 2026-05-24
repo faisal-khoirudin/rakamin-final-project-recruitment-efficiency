@@ -245,12 +245,70 @@ def validate_batch(df, required_cols):
                         f"{', '.join(str(u) for u in uniq[:5])}. "
                         f"Target encoding will fall back to the global average for these rows.")
 
-    # ── 8. Missing values in required columns (partial) ──────────────────
-    for col in required_cols:
-        n_null = df[col].isna().sum()
-        if n_null > 0:
-            warnings.append(f"`{col}` has {n_null} missing value(s). "
-                            f"These rows will use the column median as a fallback.")
+    # ── 8. Partial missing values — categorical vs numeric ───────────────
+    CATEGORICAL_COLS = ['department', 'job_title', 'source']
+    NUMERIC_COLS     = ['num_applicants', 'time_to_hire_days', 'cost_per_hire', 'offer_acceptance_rate']
+
+    for col in CATEGORICAL_COLS:
+        if col in df.columns:
+            n_null = df[col].isna().sum()
+            if n_null > 0:
+                row_indices = df[df[col].isna()].index.tolist()
+                row_display = ', '.join(f"row {i+2}" for i in row_indices[:5])
+                more = f" and {len(row_indices)-5} more" if len(row_indices) > 5 else ""
+                errors.append(
+                    f"`{col}` has {n_null} blank value(s) at {row_display}{more}. "
+                    f"This is a required categorical field and cannot be left empty — "
+                    f"please fill in all missing values before uploading."
+                )
+
+    for col in NUMERIC_COLS:
+        if col in df.columns:
+            n_null = df[col].isna().sum()
+            if n_null > 0:
+                warnings.append(
+                    f"`{col}` has {n_null} missing value(s). "
+                    f"These rows will use the column median as a fallback."
+                )
+
+    if errors:
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
+
+    # ── 9. Department–Job Title mismatch ─────────────────────────────────
+    DEPT_JOBS_VALID = {
+        "Engineering": ["Software Engineer","DevOps Engineer","Backend Developer","Data Engineer"],
+        "Finance":     ["Accountant","Finance Manager","Financial Analyst","Payroll Specialist"],
+        "HR":          ["Talent Acquisition","HR Coordinator","Recruitment Specialist","HR Manager"],
+        "Marketing":   ["Marketing Specialist","Social Media Manager","Content Strategist","SEO Analyst"],
+        "Product":     ["UX Designer","Product Manager","UI Designer","Product Analyst"],
+        "Sales":       ["Account Executive","Business Development Manager","Sales Associate","Sales Representative"],
+    }
+
+    mismatch_rows = []
+    for idx, row in df.iterrows():
+        dept = row['department']
+        job  = row['job_title']
+        # Only validate known departments — unknown depts already flagged in Check 7
+        if dept in DEPT_JOBS_VALID and job in [j for jobs in DEPT_JOBS_VALID.values() for j in jobs]:
+            if job not in DEPT_JOBS_VALID[dept]:
+                # Find which dept the job actually belongs to
+                correct_dept = next((d for d, jobs in DEPT_JOBS_VALID.items() if job in jobs), "Unknown")
+                mismatch_rows.append(
+                    f"Row {idx+2}: '{job}' belongs to {correct_dept}, not {dept}"
+                )
+
+    if mismatch_rows:
+        display  = mismatch_rows[:5]
+        more_txt = (f" ...and {len(mismatch_rows)-5} more mismatch(es)."
+                    if len(mismatch_rows) > 5 else "")
+        detail   = " | ".join(display) + more_txt
+        errors.append(
+            f"Department-Job Title mismatch found in {len(mismatch_rows)} row(s). "
+            f"Please correct the following before uploading: {detail}"
+        )
+
+    if errors:
+        return {"errors": errors, "warnings": warnings, "cleaned": None}
 
     return {"errors": errors, "warnings": warnings, "cleaned": df}
 
